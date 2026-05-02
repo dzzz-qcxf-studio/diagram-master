@@ -1,0 +1,1542 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wiring Diagram Editor</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --surface-hover: #1c2128;
+            --border: #30363d;
+            --mcu: #f9d71c;
+            --input: #e94560;
+            --output: #4ecca3;
+            --interface: #7c3aed;
+            --wire: #58a6ff;
+            --text: #e6edf3;
+            --text-muted: #8b949e;
+            --danger: #f85149;
+            --radius: 8px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'JetBrains Mono', Consolas, monospace;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Layout */
+        .app {
+            display: grid;
+            grid-template-rows: 56px 1fr;
+            grid-template-columns: 240px 1fr 280px;
+            height: 100vh;
+        }
+
+        /* Toolbar */
+        .toolbar {
+            grid-column: 1 / -1;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            gap: 12px;
+        }
+
+        .toolbar-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text);
+            margin-right: auto;
+        }
+
+        .toolbar-btn {
+            background: var(--surface-hover);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 16px;
+            border-radius: var(--radius);
+            font-family: inherit;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .toolbar-btn:hover {
+            background: var(--border);
+            border-color: var(--text-muted);
+        }
+
+        .toolbar-btn.primary {
+            background: var(--mcu);
+            color: var(--bg);
+            border-color: var(--mcu);
+        }
+
+        .toolbar-btn.primary:hover {
+            filter: brightness(1.1);
+        }
+
+        /* Module Library */
+        .module-library {
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            padding: 16px;
+            overflow-y: auto;
+        }
+
+        .library-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+
+        .module-category {
+            margin-bottom: 24px;
+        }
+
+        .category-title {
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .category-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .category-dot.mcu { background: var(--mcu); }
+        .category-dot.input { background: var(--input); }
+        .category-dot.output { background: var(--output); }
+        .category-dot.interface { background: var(--interface); }
+
+        .module-item {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 10px 12px;
+            margin-bottom: 6px;
+            cursor: grab;
+            font-size: 12px;
+            transition: all 0.15s ease;
+        }
+
+        .module-item:hover {
+            border-color: var(--text-muted);
+            transform: translateX(4px);
+        }
+
+        .module-item.dragging {
+            opacity: 0.5;
+        }
+
+        .module-item .pin-count {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* Canvas */
+        .canvas-container {
+            position: relative;
+            overflow: hidden;
+            background: var(--bg);
+            background-image:
+                radial-gradient(circle, var(--border) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        .canvas {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        .canvas-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .wire {
+            fill: none;
+            stroke: var(--wire);
+            stroke-width: 2;
+            pointer-events: stroke;
+            cursor: pointer;
+        }
+
+        .wire:hover, .wire.selected {
+            stroke-width: 3;
+            filter: drop-shadow(0 0 4px var(--wire));
+        }
+
+        .wire-point {
+            fill: var(--wire);
+            cursor: move;
+        }
+
+        /* Module Card */
+        .module-card {
+            position: absolute;
+            background: var(--surface);
+            border: 2px solid var(--border);
+            border-radius: var(--radius);
+            min-width: 160px;
+            cursor: move;
+            user-select: none;
+            transition: box-shadow 0.15s ease;
+        }
+
+        .module-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+
+        .module-card.selected {
+            border-color: var(--mcu);
+            box-shadow: 0 0 0 2px rgba(249, 215, 28, 0.3);
+        }
+
+        .module-header {
+            padding: 8px 12px;
+            border-radius: calc(var(--radius) - 2px) calc(var(--radius) - 2px) 0 0;
+            font-size: 12px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .module-card[data-type="mcu"] .module-header { background: var(--mcu); color: var(--bg); }
+        .module-card[data-type="input"] .module-header { background: var(--input); color: var(--text); }
+        .module-card[data-type="output"] .module-header { background: var(--output); color: var(--bg); }
+        .module-card[data-type="interface"] .module-header { background: var(--interface); color: var(--text); }
+
+        .module-body {
+            padding: 12px;
+        }
+
+        .pin-row {
+            display: flex;
+            align-items: center;
+            padding: 6px 0;
+            gap: 8px;
+            font-size: 11px;
+        }
+
+        .pin-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            border: 2px solid var(--text-muted);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .pin-indicator:hover {
+            border-color: var(--wire);
+            background: var(--wire);
+            transform: scale(1.2);
+        }
+
+        .pin-indicator.connected {
+            background: var(--wire);
+            border-color: var(--wire);
+        }
+
+        .pin-indicator.input { border-color: var(--input); }
+        .pin-indicator.output { border-color: var(--output); }
+
+        .pin-name {
+            flex: 1;
+            color: var(--text-muted);
+        }
+
+        .pin-value {
+            color: var(--text);
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 10px;
+            font-family: inherit;
+            width: 60px;
+            text-align: center;
+        }
+
+        .pin-value:focus {
+            outline: none;
+            border-color: var(--mcu);
+        }
+
+        .module-actions {
+            display: flex;
+            gap: 8px;
+            padding: 8px 12px;
+            border-top: 1px solid var(--border);
+        }
+
+        .module-action-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-family: inherit;
+            transition: all 0.15s ease;
+        }
+
+        .module-action-btn:hover {
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        .module-action-btn.delete:hover {
+            color: var(--danger);
+        }
+
+        /* Properties Panel */
+        .properties-panel {
+            background: var(--surface);
+            border-left: 1px solid var(--border);
+            padding: 16px;
+            overflow-y: auto;
+        }
+
+        .properties-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }
+
+        .properties-empty {
+            color: var(--text-muted);
+            font-size: 12px;
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .property-group {
+            margin-bottom: 20px;
+        }
+
+        .property-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+
+        .property-value {
+            width: 100%;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 8px 12px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 12px;
+        }
+
+        .property-value:focus {
+            outline: none;
+            border-color: var(--mcu);
+        }
+
+        .property-pins-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .property-pin {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            background: var(--bg);
+            border-radius: var(--radius);
+        }
+
+        .property-pin-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .property-pin-indicator.input { background: var(--input); }
+        .property-pin-indicator.output { background: var(--output); }
+        .property-pin-indicator.bidirectional { background: var(--interface); }
+
+        .property-pin-name {
+            flex: 1;
+            font-size: 11px;
+        }
+
+        /* Wire Mode Indicator */
+        .wire-mode-indicator {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--wire);
+            color: var(--bg);
+            padding: 12px 24px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            font-weight: 600;
+            display: none;
+            z-index: 100;
+            box-shadow: 0 4px 20px rgba(88, 166, 255, 0.4);
+        }
+
+        .wire-mode-indicator.active {
+            display: block;
+        }
+
+        /* Export Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            width: 600px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .modal-title {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 20px;
+            line-height: 1;
+        }
+
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .modal-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .modal-tab {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 8px 16px;
+            border-radius: var(--radius);
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+        }
+
+        .modal-tab.active {
+            border-color: var(--mcu);
+            color: var(--text);
+        }
+
+        .export-code {
+            width: 100%;
+            height: 300px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            padding: 16px;
+            resize: none;
+        }
+
+        .export-code:focus {
+            outline: none;
+            border-color: var(--mcu);
+        }
+
+        .modal-footer {
+            padding: 16px 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        /* AI Panel */
+        .ai-panel {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            width: 320px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+            display: none;
+            flex-direction: column;
+            max-height: 400px;
+        }
+
+        .ai-panel.active {
+            display: flex;
+        }
+
+        .ai-panel-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .ai-panel-title {
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .ai-messages {
+            flex: 1;
+            padding: 12px;
+            overflow-y: auto;
+            max-height: 280px;
+        }
+
+        .ai-message {
+            background: var(--bg);
+            border-radius: var(--radius);
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            font-size: 11px;
+            line-height: 1.5;
+        }
+
+        .ai-message.user {
+            background: var(--mcu);
+            color: var(--bg);
+        }
+
+        .ai-input-row {
+            padding: 12px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 8px;
+        }
+
+        .ai-input {
+            flex: 1;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 8px 12px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 12px;
+        }
+
+        .ai-input:focus {
+            outline: none;
+            border-color: var(--mcu);
+        }
+
+        .ai-send-btn {
+            background: var(--mcu);
+            border: none;
+            border-radius: var(--radius);
+            color: var(--bg);
+            padding: 8px 16px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+
+        /* Tooltip */
+        .tooltip {
+            position: absolute;
+            background: var(--text);
+            color: var(--bg);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            pointer-events: none;
+            z-index: 1000;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <!-- Toolbar -->
+        <div class="toolbar">
+            <div class="toolbar-title">Wiring Diagram Editor</div>
+            <button class="toolbar-btn" id="btn-new">
+                <span>+</span> 新建
+            </button>
+            <button class="toolbar-btn" id="btn-save">
+                保存
+            </button>
+            <button class="toolbar-btn" id="btn-export">
+                导出
+            </button>
+            <button class="toolbar-btn primary" id="btn-ai">
+                AI 协作
+            </button>
+        </div>
+
+        <!-- Module Library -->
+        <div class="module-library">
+            <div class="library-title">模块库</div>
+
+            <div class="module-category">
+                <div class="category-title">
+                    <span class="category-dot mcu"></span>
+                    主控芯片
+                </div>
+                <div class="module-item" draggable="true" data-type="mcu" data-module="STM32F103">
+                    <div>STM32F103</div>
+                    <div class="pin-count">引脚: PA0-PA10, PB0-PB11</div>
+                </div>
+                <div class="module-item" draggable="true" data-type="mcu" data-module="ESP32">
+                    <div>ESP32</div>
+                    <div class="pin-count">引脚: GPIO0-GPIO39</div>
+                </div>
+            </div>
+
+            <div class="module-category">
+                <div class="category-title">
+                    <span class="category-dot input"></span>
+                    输入模块
+                </div>
+                <div class="module-item" draggable="true" data-type="input" data-module="Voice Module">
+                    <div>语音模块</div>
+                    <div class="pin-count">引脚: TX, RX, VCC, GND</div>
+                </div>
+                <div class="module-item" draggable="true" data-type="input" data-module="Button">
+                    <div>按键</div>
+                    <div class="pin-count">引脚: SIG, VCC, GND</div>
+                </div>
+                <div class="module-item" draggable="true" data-type="input" data-module="IR Sensor">
+                    <div>红外传感器</div>
+                    <div class="pin-count">引脚: OUT, VCC, GND</div>
+                </div>
+                <div class="module-item" draggable="true" data-type="input" data-module="DHT11">
+                    <div>DHT11 温湿度</div>
+                    <div class="pin-count">引脚: DATA, VCC, GND</div>
+                </div>
+            </div>
+
+            <div class="module-category">
+                <div class="category-title">
+                    <span class="category-dot output"></span>
+                    输出模块
+                </div>
+                <div class="module-item" draggable="true" data-type="output" data-module="LED">
+                    <div>LED</div>
+                    <div class="pin-count">引脚: IN, VCC, GND</div>
+                </div>
+                <div class="module-item" draggable="true" data-type="output" data-module="Relay">
+                    <div>继电器</div>
+                    <div class="pin-count">引脚: IN, VCC, GND, COM, NO, NC</div>
+                </div>
+                <div class="module-item" draggable="true" data-type="output" data-module="Buzzer">
+                    <div>蜂鸣器</div>
+                    <div class="pin-count">引脚: SIG, VCC, GND</div>
+                </div>
+                <div class="module-item" draggable="true" data-type="output" data-module="Motor">
+                    <div>电机驱动</div>
+                    <div class="pin-count">引脚: ENA, IN1, IN2, VCC, GND</div>
+                </div>
+            </div>
+
+            <div class="module-category">
+                <div class="category-title">
+                    <span class="category-dot interface"></span>
+                    通信模块
+                </div>
+                <div class="module-item" draggable="true" data-type="interface" data-module="I2C OLED">
+                    <div>I2C OLED屏幕</div>
+                    <div class="pin-count">引脚: SCL, SDA, VCC, GND</div>
+                </div>
+                <div class="module-item" draggable="true" data-type="interface" data-module="UART">
+                    <div>串口模块</div>
+                    <div class="pin-count">引脚: TX, RX, VCC, GND</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Canvas -->
+        <div class="canvas-container" id="canvas-container">
+            <div class="canvas" id="canvas">
+                <svg class="canvas-svg" id="canvas-svg">
+                    <defs>
+                        <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                            <path d="M0,0 L0,6 L9,3 z" fill="var(--wire)" />
+                        </marker>
+                    </defs>
+                </svg>
+            </div>
+        </div>
+
+        <!-- Properties Panel -->
+        <div class="properties-panel">
+            <div class="properties-title">属性</div>
+            <div class="properties-empty" id="properties-empty">
+                选择模块查看属性<br><br>
+                或双击画布添加模块
+            </div>
+            <div id="properties-content" style="display: none;">
+                <div class="property-group">
+                    <div class="property-label">模块名称</div>
+                    <input type="text" class="property-value" id="prop-name">
+                </div>
+                <div class="property-group">
+                    <div class="property-label">类型</div>
+                    <input type="text" class="property-value" id="prop-type" readonly>
+                </div>
+                <div class="property-group">
+                    <div class="property-label">引脚</div>
+                    <div class="property-pins-list" id="prop-pins-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Wire Mode Indicator -->
+    <div class="wire-mode-indicator" id="wire-mode">
+        点击另一个引脚完成连接 · ESC取消
+    </div>
+
+    <!-- Export Modal -->
+    <div class="modal-overlay" id="export-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">导出接线图</div>
+                <button class="modal-close" id="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-tabs">
+                    <button class="modal-tab active" data-tab="html">HTML</button>
+                    <button class="modal-tab" data-tab="mermaid">Mermaid</button>
+                    <button class="modal-tab" data-tab="json">JSON</button>
+                </div>
+                <textarea class="export-code" id="export-code" readonly></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="toolbar-btn" id="btn-copy">复制代码</button>
+                <button class="toolbar-btn primary" id="btn-download">下载</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Panel -->
+    <div class="ai-panel" id="ai-panel">
+        <div class="ai-panel-header">
+            <div class="ai-panel-title">AI 协作</div>
+            <button class="modal-close" id="ai-close">&times;</button>
+        </div>
+        <div class="ai-messages" id="ai-messages">
+            <div class="ai-message">
+                你好！我是接线图 AI 助手。你可以：
+                <br>• 描述项目需求，我会生成接线图
+                <br>• 修改模块或引脚
+                <br>• 导出为不同格式
+            </div>
+        </div>
+        <div class="ai-input-row">
+            <input type="text" class="ai-input" id="ai-input" placeholder="描述你的项目需求...">
+            <button class="ai-send-btn" id="ai-send">发送</button>
+        </div>
+    </div>
+
+    <script>
+        // State
+        const state = {
+            modules: [],
+            wires: [],
+            selectedModule: null,
+            wireMode: false,
+            wireStartPin: null,
+            wireStartModule: null,
+            dragOffset: { x: 0, y: 0 },
+            idCounter: 1,
+        };
+
+        // Module Pin Definitions
+        const moduleDefs = {
+            'STM32F103': {
+                type: 'mcu',
+                pins: [
+                    { name: 'PA0', type: 'bidirectional', value: '' },
+                    { name: 'PA1', type: 'bidirectional', value: '' },
+                    { name: 'PA2', type: 'bidirectional', value: 'USART_TX' },
+                    { name: 'PA3', type: 'bidirectional', value: 'USART_RX' },
+                    { name: 'PA4', type: 'bidirectional', value: '' },
+                    { name: 'PA5', type: 'bidirectional', value: 'SPI_SCK' },
+                    { name: 'PA6', type: 'bidirectional', value: 'SPI_MISO' },
+                    { name: 'PA7', type: 'bidirectional', value: 'SPI_MOSI' },
+                    { name: 'PB6', type: 'bidirectional', value: 'I2C_SCL' },
+                    { name: 'PB7', type: 'bidirectional', value: 'I2C_SDA' },
+                    { name: '3.3V', type: 'output', value: 'VCC' },
+                    { name: 'GND', type: 'output', value: 'GND' },
+                ]
+            },
+            'ESP32': {
+                type: 'mcu',
+                pins: [
+                    { name: 'GPIO0', type: 'bidirectional', value: '' },
+                    { name: 'GPIO4', type: 'bidirectional', value: 'I2C_SDA' },
+                    { name: 'GPIO5', type: 'bidirectional', value: 'I2C_SCL' },
+                    { name: 'GPIO18', type: 'bidirectional', value: 'SPI_SCK' },
+                    { name: 'GPIO19', type: 'bidirectional', value: 'SPI_MISO' },
+                    { name: 'GPIO23', type: 'bidirectional', value: 'SPI_MOSI' },
+                    { name: 'GPIO25', type: 'bidirectional', value: 'DAC1' },
+                    { name: '3.3V', type: 'output', value: 'VCC' },
+                    { name: 'GND', type: 'output', value: 'GND' },
+                ]
+            },
+            'Voice Module': {
+                type: 'input',
+                pins: [
+                    { name: 'TX', type: 'output', value: '' },
+                    { name: 'RX', type: 'input', value: '' },
+                    { name: 'VCC', type: 'input', value: '3.3V/5V' },
+                    { name: 'GND', type: 'input', value: 'GND' },
+                ]
+            },
+            'Button': {
+                type: 'input',
+                pins: [
+                    { name: 'SIG', type: 'output', value: '' },
+                    { name: 'VCC', type: 'input', value: 'VCC' },
+                    { name: 'GND', type: 'input', value: 'GND' },
+                ]
+            },
+            'IR Sensor': {
+                type: 'input',
+                pins: [
+                    { name: 'OUT', type: 'output', value: '' },
+                    { name: 'VCC', type: 'input', value: '3.3V/5V' },
+                    { name: 'GND', type: 'input', value: 'GND' },
+                ]
+            },
+            'DHT11': {
+                type: 'input',
+                pins: [
+                    { name: 'DATA', type: 'bidirectional', value: '' },
+                    { name: 'VCC', type: 'input', value: '3.3V/5V' },
+                    { name: 'GND', type: 'input', value: 'GND' },
+                ]
+            },
+            'LED': {
+                type: 'output',
+                pins: [
+                    { name: 'IN', type: 'input', value: '' },
+                    { name: 'VCC', type: 'input', value: 'VCC' },
+                    { name: 'GND', type: 'input', value: 'GND' },
+                ]
+            },
+            'Relay': {
+                type: 'output',
+                pins: [
+                    { name: 'IN', type: 'input', value: '' },
+                    { name: 'VCC', type: 'input', value: '5V' },
+                    { name: 'GND', type: 'input', value: 'GND' },
+                    { name: 'COM', type: 'output', value: '' },
+                    { name: 'NO', type: 'output', value: '' },
+                    { name: 'NC', type: 'output', value: '' },
+                ]
+            },
+            'Buzzer': {
+                type: 'output',
+                pins: [
+                    { name: 'SIG', type: 'input', value: '' },
+                    { name: 'VCC', type: 'input', value: 'VCC' },
+                    { name: 'GND', type: 'input', value: 'GND' },
+                ]
+            },
+            'Motor': {
+                type: 'output',
+                pins: [
+                    { name: 'ENA', type: 'input', value: 'PWM' },
+                    { name: 'IN1', type: 'input', value: '' },
+                    { name: 'IN2', type: 'input', value: '' },
+                    { name: 'VCC', type: 'input', value: '12V' },
+                    { name: 'GND', type: 'input', value: 'GND' },
+                ]
+            },
+            'I2C OLED': {
+                type: 'interface',
+                pins: [
+                    { name: 'SCL', type: 'input', value: 'I2C_SCL' },
+                    { name: 'SDA', type: 'bidirectional', value: 'I2C_SDA' },
+                    { name: 'VCC', type: 'input', value: '3.3V' },
+                    { name: 'GND', type: 'input', value: 'GND' },
+                ]
+            },
+            'UART': {
+                type: 'interface',
+                pins: [
+                    { name: 'TX', type: 'output', value: '' },
+                    { name: 'RX', type: 'input', value: '' },
+                    { name: 'VCC', type: 'input', value: '3.3V/5V' },
+                    { name: 'GND', type: 'input', value: 'GND' },
+                ]
+            },
+        };
+
+        // DOM Elements
+        const canvas = document.getElementById('canvas');
+        const canvasSvg = document.getElementById('canvas-svg');
+        const wireModeIndicator = document.getElementById('wire-mode');
+        const propertiesEmpty = document.getElementById('properties-empty');
+        const propertiesContent = document.getElementById('properties-content');
+        const exportModal = document.getElementById('export-modal');
+        const aiPanel = document.getElementById('ai-panel');
+
+        // Initialize
+        document.querySelectorAll('.module-item[draggable]').forEach(item => {
+            item.addEventListener('dragstart', handleDragStart);
+        });
+
+        canvas.addEventListener('dragover', handleDragOver);
+        canvas.addEventListener('drop', handleDrop);
+        canvas.addEventListener('dblclick', handleCanvasDblClick);
+
+        document.getElementById('btn-export').addEventListener('click', openExportModal);
+        document.getElementById('modal-close').addEventListener('click', () => exportModal.classList.remove('active'));
+        document.getElementById('btn-ai').addEventListener('click', () => aiPanel.classList.toggle('active'));
+        document.getElementById('ai-close').addEventListener('click', () => aiPanel.classList.remove('active'));
+
+        document.querySelectorAll('.modal-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                updateExportCode();
+            });
+        });
+
+        document.getElementById('btn-copy').addEventListener('click', copyExportCode);
+        document.getElementById('btn-save').addEventListener('click', saveDiagram);
+        document.getElementById('btn-new').addEventListener('click', newDiagram);
+
+        // AI functionality
+        document.getElementById('ai-send').addEventListener('click', handleAiInput);
+        document.getElementById('ai-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleAiInput();
+        });
+
+        // Drag handlers
+        let dragData = null;
+
+        function handleDragStart(e) {
+            dragData = {
+                type: e.target.dataset.type,
+                module: e.target.dataset.module,
+            };
+            e.target.classList.add('dragging');
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            document.querySelectorAll('.module-item').forEach(item => item.classList.remove('dragging'));
+
+            if (!dragData) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left - 80;
+            const y = e.clientY - rect.top - 30;
+
+            addModule(dragData.module, dragData.type, x, y);
+            dragData = null;
+        }
+
+        function handleCanvasDblClick(e) {
+            if (e.target === canvas || e.target === canvasSvg) {
+                // Show module picker at click position
+                const x = e.clientX - canvas.getBoundingClientRect().left - 80;
+                const y = e.clientY - canvas.getBoundingClientRect().top - 30;
+                // For now, just position at center
+                addModule('STM32F103', 'mcu', x, y);
+            }
+        }
+
+        // Add module to canvas
+        function addModule(name, type, x, y) {
+            const def = moduleDefs[name];
+            if (!def) return;
+
+            const id = `module-${state.idCounter++}`;
+            const module = {
+                id,
+                name,
+                type,
+                x,
+                y,
+                pins: def.pins.map(p => ({ ...p, connected: false })),
+            };
+
+            state.modules.push(module);
+            renderModule(module);
+            selectModule(module.id);
+        }
+
+        function renderModule(module) {
+            const el = document.createElement('div');
+            el.className = 'module-card';
+            el.id = module.id;
+            el.dataset.type = module.type;
+            el.style.left = `${module.x}px`;
+            el.style.top = `${module.y}px`;
+
+            el.innerHTML = `
+                <div class="module-header">
+                    ${module.name}
+                </div>
+                <div class="module-body">
+                    ${module.pins.map((pin, idx) => `
+                        <div class="pin-row" data-pin-idx="${idx}">
+                            <div class="pin-indicator ${pin.type} ${pin.connected ? 'connected' : ''}"
+                                 data-pin="${pin.name}"
+                                 title="${pin.name}"></div>
+                            <div class="pin-name">${pin.name}</div>
+                            <input type="text" class="pin-value" value="${pin.value}" placeholder="—">
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="module-actions">
+                    <button class="module-action-btn delete" onclick="deleteModule('${module.id}')">删除</button>
+                </div>
+            `;
+
+            el.addEventListener('mousedown', (e) => {
+                if (e.target.classList.contains('pin-indicator')) {
+                    handlePinClick(e, module, e.target);
+                    return;
+                }
+                if (e.target.classList.contains('pin-value') || e.target.classList.contains('module-action-btn')) return;
+
+                startDrag(e, module);
+            });
+
+            el.addEventListener('click', (e) => {
+                if (!e.target.classList.contains('pin-indicator')) {
+                    selectModule(module.id);
+                }
+            });
+
+            canvas.appendChild(el);
+        }
+
+        function startDrag(e, module) {
+            selectModule(module.id);
+            state.dragOffset = {
+                x: e.clientX - module.x,
+                y: e.clientY - module.y,
+            };
+
+            const onMouseMove = (e) => {
+                const canvasRect = canvas.getBoundingClientRect();
+                const x = e.clientX - state.dragOffset.x;
+                const y = e.clientY - state.dragOffset.y;
+
+                module.x = Math.max(0, Math.min(x, canvasRect.width - 160));
+                module.y = Math.max(0, Math.min(y, canvasRect.height - 100));
+
+                const el = document.getElementById(module.id);
+                el.style.left = `${module.x}px`;
+                el.style.top = `${module.y}px`;
+
+                updateWires();
+            };
+
+            const onMouseUp = () => {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            };
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        }
+
+        function handlePinClick(e, module, pinEl) {
+            e.stopPropagation();
+
+            if (state.wireMode) {
+                // Complete wire
+                if (state.wireStartModule.id !== module.id) {
+                    addWire(state.wireStartModule, state.wireStartPin, module, pinEl.dataset.pin);
+                }
+                cancelWireMode();
+            } else {
+                // Start wire
+                state.wireMode = true;
+                state.wireStartModule = module;
+                state.wireStartPin = pinEl.dataset.pin;
+                pinEl.classList.add('connected');
+                wireModeIndicator.classList.add('active');
+            }
+        }
+
+        function cancelWireMode() {
+            state.wireMode = false;
+            state.wireStartModule = null;
+            state.wireStartPin = null;
+            wireModeIndicator.classList.remove('active');
+        }
+
+        function addWire(fromModule, fromPin, toModule, toPin) {
+            const id = `wire-${state.idCounter++}`;
+            const wire = { id, fromModule, fromPin, toModule, toPin };
+            state.wires.push(wire);
+            renderWire(wire);
+
+            // Mark pins as connected
+            const fromModuleObj = state.modules.find(m => m.id === fromModule);
+            const toModuleObj = state.modules.find(m => m.id === toModule);
+            if (fromModuleObj) {
+                const pin = fromModuleObj.pins.find(p => p.name === fromPin);
+                if (pin) pin.connected = true;
+            }
+            if (toModuleObj) {
+                const pin = toModuleObj.pins.find(p => p.name === toPin);
+                if (pin) pin.connected = true;
+            }
+        }
+
+        function renderWire(wire) {
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.id = wire.id;
+            path.classList.add('wire');
+            path.dataset.from = wire.fromModule;
+            path.dataset.to = wire.toModule;
+            canvasSvg.appendChild(path);
+            updateWirePath(wire);
+        }
+
+        function updateWirePath(wire) {
+            const fromEl = document.getElementById(wire.fromModule);
+            const toEl = document.getElementById(wire.toModule);
+            const pathEl = document.getElementById(wire.id);
+
+            if (!fromEl || !toEl || !pathEl) return;
+
+            const fromPinEl = fromEl.querySelector(`[data-pin="${wire.fromPin}"]`);
+            const toPinEl = toEl.querySelector(`[data-pin="${wire.toPin}"]`);
+
+            if (!fromPinEl || !toPinEl) return;
+
+            const canvasRect = canvas.getBoundingClientRect();
+            const fromRect = fromEl.getBoundingClientRect();
+            const toRect = toEl.getBoundingClientRect();
+
+            const fromX = fromRect.right - canvasRect.left;
+            const fromY = fromRect.top + (fromPinEl.offsetTop + fromPinEl.offsetHeight / 2);
+            const toX = toRect.left - canvasRect.left;
+            const toY = toRect.top + (toPinEl.offsetTop + toPinEl.offsetHeight / 2);
+
+            const midX = (fromX + toX) / 2;
+            const d = `M ${fromX} ${fromY} C ${midX} ${fromY}, ${midX} ${toY}, ${toX} ${toY}`;
+            pathEl.setAttribute('d', d);
+        }
+
+        function updateWires() {
+            state.wires.forEach(wire => updateWirePath(wire));
+        }
+
+        function selectModule(id) {
+            document.querySelectorAll('.module-card').forEach(el => el.classList.remove('selected'));
+            const el = document.getElementById(id);
+            if (el) {
+                el.classList.add('selected');
+                state.selectedModule = state.modules.find(m => m.id === id);
+                updatePropertiesPanel();
+            }
+        }
+
+        function updatePropertiesPanel() {
+            const module = state.selectedModule;
+            if (!module) {
+                propertiesEmpty.style.display = 'block';
+                propertiesContent.style.display = 'none';
+                return;
+            }
+
+            propertiesEmpty.style.display = 'none';
+            propertiesContent.style.display = 'block';
+
+            document.getElementById('prop-name').value = module.name;
+            document.getElementById('prop-type').value = module.type.toUpperCase();
+
+            const pinsList = document.getElementById('prop-pins-list');
+            pinsList.innerHTML = module.pins.map(pin => `
+                <div class="property-pin">
+                    <div class="property-pin-indicator ${pin.type}"></div>
+                    <div class="property-pin-name">${pin.name}</div>
+                </div>
+            `).join('');
+        }
+
+        function deleteModule(id) {
+            const el = document.getElementById(id);
+            if (el) el.remove();
+
+            state.modules = state.modules.filter(m => m.id !== id);
+            state.wires = state.wires.filter(w => w.fromModule !== id && w.toModule !== id);
+
+            // Remove associated wires from SVG
+            document.querySelectorAll(`.wire[data-from="${id}"], .wire[data-to="${id}"]`).forEach(el => el.remove());
+
+            if (state.selectedModule?.id === id) {
+                state.selectedModule = null;
+                updatePropertiesPanel();
+            }
+        }
+
+        function openExportModal() {
+            exportModal.classList.add('active');
+            updateExportCode();
+        }
+
+        function updateExportCode() {
+            const activeTab = document.querySelector('.modal-tab.active').dataset.tab;
+            const codeEl = document.getElementById('export-code');
+
+            if (activeTab === 'html') {
+                codeEl.value = generateHTMLExport();
+            } else if (activeTab === 'mermaid') {
+                codeEl.value = generateMermaidExport();
+            } else {
+                codeEl.value = generateJSONExport();
+            }
+        }
+
+        function generateHTMLExport() {
+            const module = state.modules[0];
+            if (!module) return '';
+
+            let html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>${module.name} 接线图</title>
+    <style>
+        body { font-family: monospace; background: #1a1a2e; color: #eee; padding: 20px; }
+        table { border-collapse: collapse; margin: 20px 0; width: 100%; }
+        td, th { border: 1px solid #333; padding: 10px; }
+        th { background: #0f3460; }
+        .editable { outline: none; background: #16213e; padding: 5px; border-radius: 3px; }
+        .editable:focus { background: #1a3a5c; box-shadow: 0 0 0 2px #4ecca3; }
+    </style>
+</head>
+<body>
+    <h1><!-- ${module.name} --></h1>
+    <table>
+        <tr><th>模块</th><th>引脚</th><th>连接到</th><th>说明</th></tr>`;
+
+            state.wires.forEach(wire => {
+                const fromM = state.modules.find(m => m.id === wire.fromModule);
+                const toM = state.modules.find(m => m.id === wire.toModule);
+                if (fromM && toM) {
+                    html += `
+        <tr>
+            <td><span class="editable" contenteditable="true">${fromM.name}</span></td>
+            <td><span class="editable" contenteditable="true">${wire.fromPin}</span></td>
+            <td><span class="editable" contenteditable="true">${toM.name} ${wire.toPin}</span></td>
+            <td><span class="editable" contenteditable="true"></span></td>
+        </tr>`;
+                }
+            });
+
+            html += `
+    </table>
+</body>
+</html>`;
+            return html;
+        }
+
+        function generateMermaidExport() {
+            let mermaid = `graph TB
+    subgraph Modules
+`;
+
+            state.modules.forEach(m => {
+                mermaid += `        ${m.id}["${m.name}"]
+`;
+            });
+
+            mermaid += `    end
+
+`;
+
+            state.wires.forEach(wire => {
+                mermaid += `    ${wire.fromModule} -->|${wire.fromPin}→${wire.toPin}| ${wire.toModule}
+`;
+            });
+
+            return mermaid;
+        }
+
+        function generateJSONExport() {
+            return JSON.stringify({
+                modules: state.modules.map(m => ({
+                    id: m.id,
+                    name: m.name,
+                    type: m.type,
+                    x: m.x,
+                    y: m.y,
+                    pins: m.pins,
+                })),
+                wires: state.wires.map(w => ({
+                    from: { module: w.fromModule, pin: w.fromPin },
+                    to: { module: w.toModule, pin: w.toPin },
+                })),
+            }, null, 2);
+        }
+
+        function copyExportCode() {
+            const code = document.getElementById('export-code');
+            navigator.clipboard.writeText(code.value);
+            document.getElementById('btn-copy').textContent = '已复制!';
+            setTimeout(() => {
+                document.getElementById('btn-copy').textContent = '复制代码';
+            }, 2000);
+        }
+
+        function saveDiagram() {
+            const data = {
+                modules: state.modules.map(m => ({
+                    id: m.id,
+                    name: m.name,
+                    type: m.type,
+                    x: m.x,
+                    y: m.y,
+                    pins: m.pins,
+                })),
+                wires: state.wires.map(w => ({
+                    fromModule: w.fromModule,
+                    fromPin: w.fromPin,
+                    toModule: w.toModule,
+                    toPin: w.toPin,
+                })),
+                nextId: state.idCounter,
+            };
+
+            localStorage.setItem('wiring-diagram', JSON.stringify(data));
+            alert('已保存到本地存储');
+        }
+
+        function loadDiagram() {
+            const saved = localStorage.getItem('wiring-diagram');
+            if (!saved) return;
+
+            try {
+                const data = JSON.parse(saved);
+                state.idCounter = data.nextId || 1;
+
+                // Clear current canvas
+                document.querySelectorAll('.module-card').forEach(el => el.remove());
+                document.querySelectorAll('.wire').forEach(el => el.remove());
+                state.modules = [];
+                state.wires = [];
+
+                // Load modules
+                data.modules.forEach(m => {
+                    state.modules.push(m);
+                    renderModule(m);
+                });
+
+                // Load wires
+                data.wires.forEach(w => {
+                    addWire(w.fromModule, w.fromPin, w.toModule, w.toPin);
+                });
+            } catch (e) {
+                console.error('Failed to load diagram:', e);
+            }
+        }
+
+        function newDiagram() {
+            if (confirm('确定要新建？当前未保存的更改将丢失。')) {
+                document.querySelectorAll('.module-card').forEach(el => el.remove());
+                document.querySelectorAll('.wire').forEach(el => el.remove());
+                state.modules = [];
+                state.wires = [];
+                state.selectedModule = null;
+                state.idCounter = 1;
+                updatePropertiesPanel();
+            }
+        }
+
+        function handleAiInput() {
+            const input = document.getElementById('ai-input');
+            const message = input.value.trim();
+            if (!message) return;
+
+            // Add user message
+            const messagesEl = document.getElementById('ai-messages');
+            messagesEl.innerHTML += `<div class="ai-message user">${message}</div>`;
+            input.value = '';
+
+            // Simulate AI response
+            setTimeout(() => {
+                const response = analyzeAndGenerate(message);
+                messagesEl.innerHTML += `<div class="ai-message">${response}</div>`;
+                messagesEl.scrollTop = messagesEl.scrollHeight;
+            }, 500);
+        }
+
+        function analyzeAndGenerate(message) {
+            const lowerMsg = message.toLowerCase();
+
+            // Analyze requirements
+            const needs = {
+                mcu: lowerMsg.includes('stm32') ? 'STM32F103' : lowerMsg.includes('esp32') ? 'ESP32' : 'STM32F103',
+                voice: lowerMsg.includes('声控') || lowerMsg.includes('语音'),
+                led: lowerMsg.includes('灯') || lowerMsg.includes('led'),
+                relay: lowerMsg.includes('继电器') || lowerMsg.includes('relay'),
+                button: lowerMsg.includes('按键'),
+                ir: lowerMsg.includes('红外'),
+            };
+
+            // Generate modules
+            let result = '我已分析需求并生成接线图：<br>';
+
+            if (needs.voice) {
+                addModule('Voice Module', 'input', 50, 50);
+                result += '• 添加 语音模块<br>';
+            }
+
+            if (needs.led || needs.relay) {
+                addModule(needs.relay ? 'Relay' : 'LED', 'output', 400, 200);
+                result += `• 添加 ${needs.relay ? '继电器' : 'LED'}<br>`;
+            }
+
+            // Always add MCU
+            const mcuX = 220;
+            const mcuY = 100;
+            addModule(needs.mcu, 'mcu', mcuX, mcuY);
+            result += `• 添加 ${needs.mcu}<br>`;
+
+            // Connect modules
+            setTimeout(() => {
+                if (needs.voice && state.modules.length >= 2) {
+                    const voice = state.modules.find(m => m.name === 'Voice Module');
+                    const mcu = state.modules.find(m => m.type === 'mcu');
+                    if (voice && mcu) {
+                        addWire(voice.id, 'TX', mcu.id, 'PA3');
+                        addWire(voice.id, 'VCC', mcu.id, '3.3V');
+                        addWire(voice.id, 'GND', mcu.id, 'GND');
+                    }
+                }
+
+                const output = state.modules.find(m => m.name === 'LED' || m.name === '继电器');
+                const mcu = state.modules.find(m => m.type === 'mcu');
+                if (output && mcu) {
+                    addWire(output.id, 'IN', mcu.id, 'PA0');
+                    addWire(output.id, 'VCC', mcu.id, '3.3V');
+                    addWire(output.id, 'GND', mcu.id, 'GND');
+                }
+            }, 100);
+
+            result += '<br>已自动生成连接，可以继续调整或导出。';
+            return result;
+        }
+
+        // ESC to cancel wire mode
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && state.wireMode) {
+                cancelWireMode();
+            }
+        });
+
+        // Load saved diagram on startup
+        loadDiagram();
+    </script>
+</body>
+</html>
