@@ -128,10 +128,23 @@ function generateArchitectureDiagram(modules) {
  * @param {string} userMessage - 用户需求描述
  * @param {string} outputDir - 输出目录
  * @param {string} projectName - 项目名称
+ * @param {Object} [requirements] - 结构化需求数据（可选）
  * @returns {Object} 生成结果
  */
-function generate({ userMessage, outputDir, projectName }) {
-  const modules = analyzeRequirements(userMessage);
+function generate({ userMessage, outputDir, projectName, requirements }) {
+  // 优先使用 requirements 数据，回退到关键词分析
+  let modules;
+  if (requirements && requirements.mcu) {
+    modules = {
+      mcu: requirements.mcu,
+      inputModules: requirements.inputs ? requirements.inputs.map(i => i.module) : [],
+      outputModules: requirements.outputs ? requirements.outputs.map(o => o.module) : [],
+      interfaces: requirements.interfaces || [],
+    };
+  } else {
+    modules = analyzeRequirements(userMessage);
+  }
+
   const diagram = generateArchitectureDiagram(modules);
 
   const filename = 'architecture.mmd';

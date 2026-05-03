@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e ' *)",
+      "Bash(start \"\" \"docs/diagrams/声控灯/wiring_editor.html\")",
+      "Edit(~/.claude/skills/diagram-master/**)",
+      "Bash(rm -rf \"c:/Users/ROG/.claude/skills/diagram-master/docs/diagrams/temperature-alarm\")",
+      "Bash(rm -rf \"c:/Users/ROG/.claude/skills/diagram-master/docs/superpowers\")",
+      "Bash(cp -r \"c:/Users/ROG/.claude/skills/diagram-master/docs/diagrams/声控灯\" \"C:/Users/ROG/Desktop/WORK/嵌入式大师工作流/\")",
+      "Bash(rm -rf \"c:/Users/ROG/.claude/skills/diagram-master/docs/diagrams\")",
+      "Bash(start \"\" \"C:/Users/ROG/Desktop/WORK/嵌入式大师工作流/声控灯/wiring_editor.html\")",
+      "Bash(node -e \"const { processDemand } = require\\('./index.js'\\); processDemand\\({ message: '声控灯', projectPath: null }\\).then\\(r => console.log\\(JSON.stringify\\(r, null, 2\\)\\)\\).catch\\(e => console.error\\(e\\)\\)\")",
+      "Bash(npm test *)",
+      "Bash(npx eslint *)",
+      "Bash(start \"\" \"C:/Users/ROG/Desktop/WORK/嵌入式大师工作流/声控灯/flowchart.html\")",
+      "Bash(start \"\" \"C:/Users/ROG/Desktop/WORK/嵌入式大师工作流/docs/diagrams/声控灯/flowchart.html\")",
+      "Bash(start \"\" \"C:/Users/ROG/Desktop/WORK/嵌入式大师工作流/docs/diagrams/声控灯/wiring_editor.html\")",
+      "Edit(~/.claude/skills/requirements-master/**)",
+      "Bash(start \"\" \"C:/Users/ROG/Desktop/WORK/嵌入式大师工作流/人体感应灯/wiring_editor.html\")"
+    ]
+  }
+}

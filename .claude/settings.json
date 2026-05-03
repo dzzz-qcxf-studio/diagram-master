@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit(~/.claude/skills/diagram-master/**)",
+      "Bash(node -e ' *)",
+      "Bash(node --test tests/)",
+      "Bash(start \"\" \"C:\\\\Users\\\\ROG\\\\AppData\\\\Local\\\\Temp\\\\demo-editor-test\\\\docs\\\\diagrams\\\\温度报警器\\\\wiring_editor.html\")",
+      "Bash(git commit -m ' *)",
+      "Edit(~/.claude/skills/requirements-master/**)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\ROG\\.claude\\skills"
+    ]
+  }
+}

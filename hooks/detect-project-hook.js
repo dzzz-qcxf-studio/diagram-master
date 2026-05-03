@@ -2,7 +2,7 @@
  * Diagram Agent - 需求检测 Hook
  *
  * 拦截用户消息，检测项目需求关键词
- * 当检测到需求时，触发 diagram-agent 生成图表
+ * 当检测到需求时，触发 diagram-master 生成图表
  */
 
 // 检测项目需求的关键词模式
@@ -57,7 +57,7 @@ function onUserMessage({ message, ...context }) {
   // 如果检测到项目需求或图片请求，返回触发信号
   if (isProjectDemand || isImageRequest) {
     return {
-      trigger: 'diagram-agent',
+      trigger: 'diagram-master',
       type: isProjectDemand ? 'project-demand' : 'image-request',
       message: message,
       shouldAutoGenerate: true,
