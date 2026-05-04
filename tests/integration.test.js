@@ -58,10 +58,11 @@ describe('Integration: 完整工作流', async () => {
   const state = JSON.parse(fs.readFileSync(path.join(tmpDir, 'workflow-state.json'), 'utf8'));
   assertEqual(state.currentPhase, 2, 'state should be at phase 2');
 
-  // 执行 Phase 3
+  // 执行 Phase 3（专家团 Dev-QA Loop）
   const result3 = await orchestrate({ message: '继续', projectPath: tmpDir });
-  assert(result3.phase === 3, 'should advance to phase 3');
-  assert(result3.nextStep.includes('stm32_master'), 'should hint at stm32_master');
+  assert(result3.phase === '3a', 'should advance to phase 3a (firmware writing)');
+  assert(result3.persona, 'should provide embedded firmware engineer persona');
+  assert(result3.nextStep.includes('3b'), 'should hint at next sub-phase (code review)');
 
   // 清理
   fs.rmSync(tmpDir, { recursive: true });

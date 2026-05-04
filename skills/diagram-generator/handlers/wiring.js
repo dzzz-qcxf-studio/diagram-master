@@ -765,6 +765,30 @@ function generateEditor(modules, requirements) {
 }
 
 /**
+ * 从 note 字段提取需要的辅助元件
+ * @param {string} note - requirements 中的 note 字段
+ * @returns {Array} [{ type, label }] 辅助元件列表
+ */
+function parseCompanionComponents(note) {
+  if (!note) return [];
+  const companions = [];
+
+  // 电阻: "220Ω", "4.7K上拉", "10k电阻" 等
+  const resistorMatch = note.match(/(\d+\.?\d*)\s*[kK]?\s*[Ω欧姆ohm]/i);
+  if (resistorMatch || /电阻|限流|上拉|下拉/i.test(note)) {
+    const value = resistorMatch ? resistorMatch[0].replace(/\s/g, '') : '';
+    companions.push({ type: 'Resistor', label: value || '电阻' });
+  }
+
+  // MOSFET: "MOSFET", "MOS管", "mosfet驱动"
+  if (/MOSFET|MOS管|mosfet/i.test(note)) {
+    companions.push({ type: 'N-MOSFET', label: 'N-MOSFET' });
+  }
+
+  return companions;
+}
+
+/**
  * 构建预填充脚本（注入到编辑器中执行）
  */
 function buildPresetScript(mcu, matchedInputs, matchedOutputs, requirements) {
@@ -781,7 +805,6 @@ function buildPresetScript(mcu, matchedInputs, matchedOutputs, requirements) {
   // 输入模块连线逻辑
   let inputScript = '';
   matchedInputs.forEach((input, i) => {
-    // 只有多引脚接口（SPI/I2C/UART）才解析引脚映射，单引脚接口（ADC/GPIO）直接用第一个引脚名
     const multiPinInterfaces = ['SPI', 'I2C', 'UART'];
     const isMultiPin = multiPinInterfaces.includes((input.interface || '').toUpperCase());
     const pinMap = isMultiPin ? parsePinMapping(input.pin) : {};
@@ -792,7 +815,6 @@ function buildPresetScript(mcu, matchedInputs, matchedOutputs, requirements) {
       (function(inputMod) {
         setTimeout(function() {
           ${hasPinMap ? `
-          // 多引脚模块（如 SPI）：逐一连接
           var pinMap = ${JSON.stringify(pinMap)};
           Object.keys(pinMap).forEach(function(pinName) {
             addWire(inputMod.id, pinName, mcuModule.id, pinMap[pinName]);
@@ -800,7 +822,6 @@ function buildPresetScript(mcu, matchedInputs, matchedOutputs, requirements) {
           addWire(inputMod.id, 'VCC', mcuModule.id, '3.3V');
           addWire(inputMod.id, 'GND', mcuModule.id, 'GND');
           ` : `
-          // 单引脚模块：找第一个信号引脚连到 requirements 指定的 MCU 引脚
           var sigPin = inputMod.pins.find(function(p) {
             return p.type !== 'input' && p.name !== 'VCC' && p.name !== 'GND';
           });
@@ -816,35 +837,78 @@ function buildPresetScript(mcu, matchedInputs, matchedOutputs, requirements) {
     `;
   });
 
-  // 输出模块连线逻辑
+  // 输出模块连线逻辑（含辅助元件）
   let outputScript = '';
   matchedOutputs.forEach((output, i) => {
     const mcuPin = (output.pin || '').split(/\s/)[0] || 'PA' + (matchedInputs.length + i);
-    outputScript += `
-      addModule('${output.editorName}', 'output', 580, ${40 + i * 130});
-      (function(outputMod) {
-        setTimeout(function() {
+    const companions = parseCompanionComponents(output.note);
+    const baseX = 580;
+    const baseY = 40 + i * 160;
+
+    if (companions.length > 0) {
+      // 有辅助元件：MCU → 辅助元件 → 输出模块
+      const companionScript = companions.map((c, ci) => `
+        addModule('${c.type}', 'interface', ${baseX - 140 * (ci + 1)}, ${baseY});
+        var comp${ci} = state.modules[state.modules.length - 1];
+      `).join('');
+
+      // 连线：MCU → 最后一个辅助元件 → ... → 第一个辅助元件 → 输出模块
+      const wireParts = [];
+      // MCU → 最后一个辅助元件（离 MCU 最近的）
+      const lastCompIdx = companions.length - 1;
+      wireParts.push(`addWire(comp${lastCompIdx}.id, 'IN', mcuModule.id, '${mcuPin}');`);
+      // 辅助元件之间串联
+      for (let ci = lastCompIdx; ci > 0; ci--) {
+        wireParts.push(`addWire(comp${ci - 1}.id, 'IN', comp${ci}.id, 'OUT');`);
+      }
+      // 第一个辅助元件 → 输出模块信号引脚
+      wireParts.push(`addWire(comp0.id, 'OUT', outputMod.id, sigPin.name);`);
+      // 输出模块 VCC/GND
+      wireParts.push(`addWire(outputMod.id, 'VCC', mcuModule.id, '3.3V');`);
+      wireParts.push(`addWire(outputMod.id, 'GND', mcuModule.id, 'GND');`);
+
+      outputScript += `
+        addModule('${output.editorName}', 'output', ${baseX + 140}, ${baseY});
+        (function(outputMod) {
           var sigPin = outputMod.pins.find(function(p) {
             return p.type !== 'input' && p.name !== 'VCC' && p.name !== 'GND';
           }) || outputMod.pins.find(function(p) {
             return p.name !== 'VCC' && p.name !== 'GND';
           });
-          if (sigPin) {
-            addWire(outputMod.id, sigPin.name, mcuModule.id, '${mcuPin}');
-            addWire(outputMod.id, 'VCC', mcuModule.id, '3.3V');
-            addWire(outputMod.id, 'GND', mcuModule.id, 'GND');
-          }
-        }, ${200 + i * 50});
-      })(state.modules[state.modules.length - 1]);
-    `;
+          setTimeout(function() {
+            ${companionScript}
+            setTimeout(function() {
+              ${wireParts.join('\n              ')}
+            }, 50);
+          }, ${200 + i * 50});
+        })(state.modules[state.modules.length - 1]);
+      `;
+    } else {
+      // 无辅助元件：直接连线
+      outputScript += `
+        addModule('${output.editorName}', 'output', ${baseX}, ${baseY});
+        (function(outputMod) {
+          setTimeout(function() {
+            var sigPin = outputMod.pins.find(function(p) {
+              return p.type !== 'input' && p.name !== 'VCC' && p.name !== 'GND';
+            }) || outputMod.pins.find(function(p) {
+              return p.name !== 'VCC' && p.name !== 'GND';
+            });
+            if (sigPin) {
+              addWire(outputMod.id, sigPin.name, mcuModule.id, '${mcuPin}');
+              addWire(outputMod.id, 'VCC', mcuModule.id, '3.3V');
+              addWire(outputMod.id, 'GND', mcuModule.id, 'GND');
+            }
+          }, ${200 + i * 50});
+        })(state.modules[state.modules.length - 1]);
+      `;
+    }
   });
 
   return `
     // === 预填充模块（由 diagram-agent 生成） ===
-    // 标记有预填充数据，跳过 loadDiagram()
     state._hasPreset = true;
     (function() {
-      // 添加 MCU
       addModule('${mcuName}', 'mcu', 300, 160);
       var mcuModule = state.modules[state.modules.length - 1];
 

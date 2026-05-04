@@ -1,60 +1,43 @@
 # Diagram Generator Skill
 
-当用户提出嵌入式项目需求时，自动生成可视化图表（架构图、接线图、流程图）。
+自动生成可视化图表（接线图编辑器、流程图、软件设计文档）。
 
 ## 触发条件
 
-用户描述项目需求时自动触发，或用户明确要求"生成图片"时触发。
+**本 skill 由 `requirements-master` 通过工作流链自动调用，或用户明确要求"生成图片"时触发。**
+
+当用户描述嵌入式项目需求时，应由 `embedded-pipeline` 作为入口统一调度。
 
 ## 输入
 
 - `userMessage`: 用户的需求描述
 - `projectPath`: 用户项目路径（可选）
+- `requirements`: requirements.json 数据（来自 requirements-master）
 
 ## 输出
 
 生成以下文件到 `<用户项目>/docs/diagrams/<项目名>/` 目录：
 
 | 文件 | 格式 | 内容 |
-|------|------|------|
-| `architecture.mmd` | Mermaid | 系统架构图 |
-| `wiring.html` | HTML+CSS | 硬件接线图（AI 可编辑） |
-| `wiring_preview.html` | HTML | 浏览器预览版 |
-| `flowchart.mmd` | Mermaid | 软件流程图 |
+| ---- | ---- | ---- |
+| `wiring_editor.html` | HTML | 交互式接线图编辑器（预填充模块，可拖拽编辑）★主要输出 |
+| `wiring.html` | HTML | 静态接线图（可编辑表格） |
+| `wiring_preview.html` | HTML | 接线图预览版 |
+| `flowchart.html` | HTML | 软件流程图（含初始化 + 主循环双图渲染） |
+| `software_design.md` | Markdown | 软件设计文档（模块架构、初始化、主循环、函数清单） |
 
 ## 使用方式
 
-用户说："我要实现一个声控开灯的项目"
+1. 读取 requirements.json（由 requirements-master 生成）
+2. 调用 `agents/diagram-agent.js` 的 `main()` 函数
+3. 生成 5 个文件，展示给用户确认
 
-AI 自动：
-1. 分析需求中的硬件模块
-2. 生成对应的图表文件
-3. 展示给用户
+## 工作流链（强制指令）
 
-## 示例输入
+**本 skill 是管道的第二步。完成后你必须：**
 
-"我要实现一个声控开灯的项目"
+1. 展示生成的图表给用户确认
+2. 等待用户确认后，提示用户连接硬件
+3. 完成后调用 stm32_master 进行编译烧录
 
-## 示例输出
-
-生成的图表展示：
-- 系统架构：语音模块 → STM32 → 继电器 → 灯
-- 硬件接线：STM32 引脚与各模块的连接
-- 软件流程：录音 → 语音识别 → 指令解析 → 继电器控制
-
-## 技术实现
-
-- **Mermaid**：生成流程图、架构图（文本格式，AI 可改）
-- **HTML+CSS**：生成接线图/原理图（带引脚标注）
-
-## Handlers
-
-| Handler | 职责 |
-|---------|------|
-| `architecture.js` | 生成系统架构图（Mermaid） |
-| `wiring.js` | 生成硬件接线图（HTML） |
-| `flowchart.js` | 生成软件流程图（Mermaid） |
-
-## 保存路径
-
-默认保存到用户当前项目的 `docs/diagrams/` 目录。
+**禁止**：图表生成完成后跳过用户确认直接写代码。

@@ -320,6 +320,41 @@
         .module-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.4); z-index: 2; }
         .module-card.selected { border-color: var(--mcu); box-shadow: 0 0 0 2px rgba(249, 215, 28, 0.25); z-index: 3; }
 
+        /* Compact mode for small components (resistor, MOSFET, etc.) */
+        .module-card.compact {
+            min-width: 60px;
+            border-radius: 6px;
+            background: transparent;
+            border: none;
+            box-shadow: none;
+        }
+        .module-card.compact:hover { box-shadow: none; }
+        .module-card.compact.selected { box-shadow: 0 0 0 2px var(--accent); }
+        .module-card.compact .module-header { display: none; }
+        .module-card.compact .module-body {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            padding: 0;
+        }
+        .module-card.compact .pin-row {
+            padding: 0;
+        }
+        .module-card.compact .pin-name { display: none; }
+        .module-card.compact .pin-value { display: none; }
+        .module-card.compact .pin-indicator {
+            width: 10px;
+            height: 10px;
+            border: 2px solid var(--text-muted);
+            background: var(--bg);
+        }
+        .module-card.compact .module-actions { display: none; }
+        .compact-symbol {
+            display: flex;
+            align-items: center;
+            pointer-events: none;
+        }
+
         .module-header {
             padding: 6px 10px;
             border-radius: calc(var(--radius) - 2px) calc(var(--radius) - 2px) 0 0;
@@ -814,6 +849,10 @@
                         <div>HC-SR501</div>
                         <div class="pin-count">{ name, { name, { name</div>
                     </div>
+                    <div class="module-item" draggable="true" data-type="input" data-module="声音传感器模块（数字输出）">
+                        <div>声音传感器模块（数字输出）</div>
+                        <div class="pin-count">{ name, { name, { name</div>
+                    </div>
 
                 <div class="module-category" data-cat="output">
                     <div class="category-title"><span class="category-dot output"></span>输出模块</div>
@@ -868,6 +907,18 @@
                     <div class="module-item" draggable="true" data-type="interface" data-module="NRF24L01">
                         <div>NRF24L01 无线</div>
                         <div class="pin-count">CE, CSN, SCK, MOSI, MISO, VCC, GND</div>
+                    </div>
+                </div>
+
+                <div class="module-category" data-cat="interface">
+                    <div class="category-title"><span class="category-dot interface"></span>辅助元件</div>
+                    <div class="module-item" draggable="true" data-type="interface" data-module="Resistor">
+                        <div>限流电阻</div>
+                        <div class="pin-count">IN, OUT</div>
+                    </div>
+                    <div class="module-item" draggable="true" data-type="interface" data-module="N-MOSFET">
+                        <div>N-MOSFET</div>
+                        <div class="pin-count">G, D, S</div>
                     </div>
                 </div>
             </div>
@@ -1139,6 +1190,11 @@
                 { name: 'VCC', type: 'input', value: '3.3V' },
                 { name: 'GND', type: 'input', value: 'GND' },
             ]},
+            '声音传感器模块（数字输出）': { type: 'input', pins: [
+                { name: 'SIG', type: 'output', value: '' },
+                { name: 'VCC', type: 'input', value: '3.3V' },
+                { name: 'GND', type: 'input', value: 'GND' }
+            ]},
             'HC-SR501': { type: 'input', pins: [
                 { name: 'SIG', type: 'output', value: '' },
                 { name: 'VCC', type: 'input', value: '3.3V' },
@@ -1241,6 +1297,15 @@
                 { name: 'MISO', type: 'output', value: 'SPI_MISO' },
                 { name: 'VCC', type: 'input', value: '3.3V' },
                 { name: 'GND', type: 'input', value: 'GND' },
+            ]},
+            'Resistor': { type: 'interface', pins: [
+                { name: 'IN', type: 'input', value: '' },
+                { name: 'OUT', type: 'output', value: '' },
+            ]},
+            'N-MOSFET': { type: 'interface', pins: [
+                { name: 'G', type: 'input', value: '' },
+                { name: 'D', type: 'output', value: '' },
+                { name: 'S', type: 'input', value: 'GND' },
             ]},
         };
 
@@ -1432,32 +1497,64 @@
             return mod;
         }
 
+        const COMPACT_SYMBOLS = {
+            'Resistor': '<svg class="compact-symbol" width="48" height="20" viewBox="0 0 48 20"><path d="M0 10 L8 10 L11 3 L17 17 L23 3 L29 17 L35 3 L40 10 L48 10" stroke="var(--text)" stroke-width="1.8" fill="none" stroke-linejoin="round"/></svg>',
+            'N-MOSFET': '<svg class="compact-symbol" width="36" height="32" viewBox="0 0 36 32"><path d="M0 16 L10 16 M10 6 L10 26 M14 6 L14 26 M14 10 L26 4 M14 16 L22 16 L22 28 L14 28 L14 26 M26 4 L26 12 M22 16 L26 16 L26 28 M22 28 L26 28" stroke="var(--text)" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>',
+        };
+
         function renderModule(mod) {
+            const isCompact = mod.type === 'interface' && mod.pins.length <= 3;
             const el = document.createElement('div');
-            el.className = 'module-card' + (mod.flipped ? ' flipped' : '');
+            el.className = 'module-card' + (mod.flipped ? ' flipped' : '') + (isCompact ? ' compact' : '');
             el.id = mod.id;
             el.dataset.type = mod.type;
             el.style.left = `${mod.x}px`;
             el.style.top = `${mod.y}px`;
 
-            el.innerHTML = `
-                <div class="module-header">${mod.name}</div>
-                <div class="module-body">
-                    ${mod.pins.map((pin, idx) => `
-                        <div class="pin-row" data-pin-idx="${idx}">
-                            <div class="pin-indicator ${pin.type === 'input' ? 'input-pin' : pin.type === 'output' ? 'output-pin' : ''} ${pin.connected ? 'connected' : ''}"
-                                 data-pin="${pin.name}" title="${pin.name}"></div>
-                            <div class="pin-name">${pin.name}</div>
-                            <input type="text" class="pin-value" value="${pin.value || ''}" placeholder="—" data-pin-idx="${idx}">
-                        </div>
-                    `).join('')}
-                </div>
-                <div class="module-actions">
-                    <button class="module-action-btn" data-action="flip">翻转</button>
-                    <button class="module-action-btn" data-action="duplicate">复制</button>
-                    <button class="module-action-btn delete" data-action="delete">删除</button>
-                </div>
-            `;
+            if (isCompact) {
+                const symbol = COMPACT_SYMBOLS[mod.name] || '';
+                const inputPins = mod.pins.filter(p => p.type === 'input');
+                const outputPins = mod.pins.filter(p => p.type === 'output');
+                el.innerHTML = `
+                    <div class="module-body">
+                        ${inputPins.map((pin, idx) => `
+                            <div class="pin-row" data-pin-idx="${mod.pins.indexOf(pin)}">
+                                <div class="pin-indicator input-pin ${pin.connected ? 'connected' : ''}"
+                                     data-pin="${pin.name}" title="${pin.name}"></div>
+                            </div>
+                        `).join('')}
+                        ${symbol}
+                        ${outputPins.map((pin, idx) => `
+                            <div class="pin-row" data-pin-idx="${mod.pins.indexOf(pin)}">
+                                <div class="pin-indicator output-pin ${pin.connected ? 'connected' : ''}"
+                                     data-pin="${pin.name}" title="${pin.name}"></div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } else {
+                el.innerHTML = `
+                    <div class="module-header">${mod.name}</div>
+                    <div class="module-body">
+                        ${mod.pins.map((pin, idx) => {
+                            const pinClass = pin.type === 'input' ? 'input-pin' : 'output-pin';
+                            const connClass = pin.connected ? 'connected' : '';
+                            return `
+                            <div class="pin-row" data-pin-idx="${idx}">
+                                <div class="pin-indicator ${pinClass} ${connClass}"
+                                     data-pin="${pin.name}" title="${pin.name}"></div>
+                                <div class="pin-name">${pin.name}</div>
+                                <input type="text" class="pin-value" value="${pin.value || ''}" placeholder="—" data-pin-idx="${idx}">
+                            </div>`;
+                        }).join('')}
+                    </div>
+                    <div class="module-actions">
+                        <button class="module-action-btn" data-action="flip">翻转</button>
+                        <button class="module-action-btn" data-action="duplicate">复制</button>
+                        <button class="module-action-btn delete" data-action="delete">删除</button>
+                    </div>
+                `;
+            }
 
             // Pin click for wiring
             el.querySelectorAll('.pin-indicator').forEach(pinEl => {
